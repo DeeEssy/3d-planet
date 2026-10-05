@@ -25,7 +25,8 @@ const latLon = (lat, lon) => new THREE.Vector3().setFromSphericalCoords(
 
 const LOCATIONS = [
   {
-    position: latLon(30, 113),
+    lat: 30,
+    lon: 113,
     main: true,
     labels: [
       { text: 'UK', size: .03 },
@@ -33,7 +34,8 @@ const LOCATIONS = [
     ]
   },
   {
-    position: latLon(0, 90),
+    lat: 0,
+    lon: 90,
     labels: [
       { text: 'Egypt', size: .03 },
       { text: 'Cairo', color: 0x84B3DF, size: .02 }
@@ -120,6 +122,14 @@ const sketch = ({ context }) => {
 
   const LABEL_ROTATION = camera.quaternion.clone();
 
+  const Y_AXIS = new THREE.Vector3(0, 1, 0);
+
+  const CAMERA_LON = Math.atan2(camera.position.x, camera.position.z);
+
+  const facingRotation = lon => new THREE.Quaternion()
+    .setFromAxisAngle(Y_AXIS, THREE.MathUtils.degToRad(lon) - CAMERA_LON)
+    .multiply(LABEL_ROTATION);
+
   const fontLoader = new THREE.FontLoader();
 
   fontLoader.load('fonts/font-roboto.json', font => {
@@ -141,12 +151,12 @@ const sketch = ({ context }) => {
       return textMesh;
     }
 
-    function showLocation({ position, main, labels }) {
-      const pin = addLocationPin(position, { main });
+    function showLocation({ lat, lon, main, labels }) {
+      const pin = addLocationPin(latLon(lat, lon), { main });
 
       const labelGroup = new THREE.Group();
       labelGroup.position.copy(pin.top);
-      labelGroup.quaternion.copy(LABEL_ROTATION);
+      labelGroup.quaternion.copy(facingRotation(lon));
       planetContents.add(labelGroup);
 
       let lineY = 0;
@@ -172,6 +182,38 @@ const sketch = ({ context }) => {
 
     LOCATIONS.forEach(showLocation);
   })
+
+  const loader = new THREE.TextureLoader();
+
+  loader.load(
+    'images/tree.svg',
+    function (texture) {
+      const treeIconGeometry = new THREE.PlaneGeometry(.160, .160);
+      treeIconGeometry.translate(0, .160 / 2, 0);
+
+      const treeIconMaterial = new THREE.MeshBasicMaterial( {
+          map: texture,
+          side: THREE.DoubleSide,
+          alphaTest:.5
+      });
+
+      const treeIcon = new THREE.Mesh(
+        treeIconGeometry,
+        treeIconMaterial
+      );
+      treeIcon.position.set(...latLon(30, 150));
+      treeIcon.quaternion.copy(facingRotation(150));
+      treeIcon.scale.setScalar(0);
+
+      planetContents.add(treeIcon);
+
+      anime({ targets: treeIcon.scale, x: [0, .7], y: [0, .7], z: [0, 1], duration: 600, easing: 'linear' })
+    },
+    undefined,
+    function ( e ) {
+        console.error( e );
+    }
+  );
 
   return {
     resize ({ pixelRatio, viewportWidth, viewportHeight }) {
