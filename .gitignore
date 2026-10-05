@@ -1,0 +1,5 @@
+front/static/sitemap.xml
+api/web/public/uploads
+node_modules
+*.lock
+.idea
