@@ -8,6 +8,39 @@ require('three/examples/js/controls/OrbitControls');
 require('three/examples/js/loaders/FontLoader');
 require('three/examples/js/geometries/TextGeometry');
 
+const PLANET_RADIUS = 1.0499;
+const PIN_HEIGHT_ABOVE_PLANET = .03;
+const PIN_RADIUS = PLANET_RADIUS + PIN_HEIGHT_ABOVE_PLANET;
+
+const PIN_STYLES = {
+  main: { stickRadius: .004, stickHeight: .18, dotRadius: .017, dotSegments: 14, color: 0x86c3f9 },
+  secondary: { stickRadius: .002, stickHeight: .1, dotRadius: .01, dotSegments: 8, color: 0x008DFB }
+};
+
+const latLon = (lat, lon) => new THREE.Vector3().setFromSphericalCoords(
+  PIN_RADIUS,
+  THREE.MathUtils.degToRad(90 - lat),
+  THREE.MathUtils.degToRad(lon)
+).toArray();
+
+const LOCATIONS = [
+  {
+    position: latLon(30, 113),
+    main: true,
+    labels: [
+      { text: 'UK', size: .03 },
+      { text: 'London', color: 0x84B3DF, size: .02 }
+    ]
+  },
+  {
+    position: latLon(0, 90),
+    labels: [
+      { text: 'Egypt', size: .03 },
+      { text: 'Cairo', color: 0x84B3DF, size: .02 }
+    ]
+  }
+];
+
 const settings = {
   animate: true,
   context: 'webgl',
@@ -29,7 +62,16 @@ const sketch = ({ context }) => {
 
   const scene = new THREE.Scene();
 
-  const planetGeometry = new THREE.IcosahedronGeometry(1, 2);
+  const planetContentsGeometry = new THREE.IcosahedronGeometry(1, 2);
+  const planetContentsMaterial = new THREE.MeshBasicMaterial({
+    opacity: 0,
+    transparent: true
+  })
+
+  const planetContents = new THREE.Mesh(
+    planetContentsGeometry,
+    planetContentsMaterial
+  );
 
   const lightHolder = new THREE.Group();
 
@@ -41,31 +83,12 @@ const sketch = ({ context }) => {
 
   lightHolder.add(aLight, aLight2);
 
-  const materialIcosahedron = new THREE.MeshBasicMaterial({
-    opacity: 0,
-    transparent: true
-  })
+  const planetBodyGeometry = new THREE.SphereGeometry(PLANET_RADIUS, 64, 36);
+  const planetBodyMaterial = new THREE.MeshStandardMaterial({ color: new THREE.Color(0x091e5a) });
 
-  const mesh = new THREE.Mesh(
-    planetGeometry,
-    materialIcosahedron
-  );
+  const planetBody = new THREE.Mesh(planetBodyGeometry, planetBodyMaterial);
 
-  const parent = mesh;
-
-  const geomHide = new THREE.SphereGeometry(1.0499, 64, 36);
-  const matHide = new THREE.MeshStandardMaterial({ color: new THREE.Color(0x091e5a) });
-
-  const meshHide = new THREE.Mesh(geomHide, matHide);
-
-  scene.add(mesh);
-  scene.add(meshHide);
-  scene.add(lightHolder);
-
-  const PIN_STYLES = {
-    main: { stickRadius: .004, stickHeight: .18, dotRadius: .017, dotSegments: 24, color: 0x86c3f9 },
-    secondary: { stickRadius: .002, stickHeight: .1, dotRadius: .01, dotSegments: 12, color: 0x008DFB }
-  };
+  scene.add(planetContents, planetBody, lightHolder);
 
   const addLocationPin = (surfacePosition, { main = false, showDot = true } = {}) => {
     const style = main ? PIN_STYLES.main : PIN_STYLES.secondary;
@@ -79,7 +102,7 @@ const sketch = ({ context }) => {
 
     const stick = new THREE.Mesh(stickGeometry, material);
     stick.position.copy(surfacePoint);
-    parent.add(stick);
+    planetContents.add(stick);
 
     const top = surfacePoint.clone();
     top.y += style.stickHeight;
@@ -90,36 +113,10 @@ const sketch = ({ context }) => {
     dot.position.copy(surfacePoint);
     dot.lookAt(new THREE.Vector3());
 
-    parent.add(dot);
+    planetContents.add(dot);
 
     return { stick, dot, top };
   };
-
-  const PIN_RADIUS = 1.09;
-
-  const latLon = (lat, lon) => new THREE.Vector3().setFromSphericalCoords(
-    PIN_RADIUS,
-    THREE.MathUtils.degToRad(90 - lat),
-    THREE.MathUtils.degToRad(lon)
-  ).toArray();
-
-  const LOCATIONS = [
-    {
-      position: latLon(30, 113),
-      main: true,
-      labels: [
-        { text: 'UK', size: .03 },
-        { text: 'London', color: 0x84B3DF, size: .02 }
-      ]
-    },
-    {
-      position: latLon(0, 90),
-      labels: [
-        { text: 'Egypt', size: .03 },
-        { text: 'Cairo', color: 0x84B3DF, size: .02 }
-      ]
-    }
-  ];
 
   const LABEL_ROTATION = camera.quaternion.clone();
 
@@ -127,19 +124,18 @@ const sketch = ({ context }) => {
 
   fontLoader.load('fonts/font-roboto.json', font => {
     function addText(text, { size, y, color = 0xffffff }) {
-      const textGeomatry = new THREE.TextGeometry(text, {
+      const textGeometry = new THREE.TextGeometry(text, {
         font,
         size,
         height: .001,
-        curveSegments: 12,
+        curveSegments: 4,
       });
 
       const textMaterial = new THREE.MeshBasicMaterial({
         color,
-        side: THREE.FrontSide
       });
 
-      const textMesh = new THREE.Mesh(textGeomatry, textMaterial);
+      const textMesh = new THREE.Mesh(textGeometry, textMaterial);
       textMesh.position.set(.02, y, 0);
 
       return textMesh;
@@ -151,11 +147,11 @@ const sketch = ({ context }) => {
       const labelGroup = new THREE.Group();
       labelGroup.position.copy(pin.top);
       labelGroup.quaternion.copy(LABEL_ROTATION);
-      parent.add(labelGroup);
+      planetContents.add(labelGroup);
 
       let lineY = 0;
       const labelMeshes = labels.map(({ text, color, size = .05 }) => {
-        lineY -= size * 1.4;
+        lineY -= size * 1.8;
         return addText(text, { size, y: lineY, color });
       });
       labelGroup.add(...labelMeshes);
@@ -185,7 +181,7 @@ const sketch = ({ context }) => {
       camera.updateProjectionMatrix();
     },
     render ({ time, deltaTime }) {
-      parent.rotation.y = time * THREE.MathUtils.degToRad(-3);
+      planetContents.rotation.y = time * THREE.MathUtils.degToRad(-3);
 
       lightHolder.quaternion.copy(camera.quaternion);
       renderer.render(scene, camera);
