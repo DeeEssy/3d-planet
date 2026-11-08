@@ -7,6 +7,7 @@ const anime = require('animejs');
 require('three/examples/js/controls/OrbitControls');
 require('three/examples/js/loaders/FontLoader');
 require('three/examples/js/geometries/TextGeometry');
+require('three/examples/js/utils/BufferGeometryUtils');
 
 const PLANET_RADIUS = 1.0499;
 const PIN_HEIGHT_ABOVE_PLANET = .03;
@@ -17,31 +18,134 @@ const PIN_STYLES = {
   secondary: { stickRadius: .002, stickHeight: .1, dotRadius: .01, dotSegments: 8, color: 0x008DFB }
 };
 
-const latLon = (lat, lon) => new THREE.Vector3().setFromSphericalCoords(
-  PIN_RADIUS,
+const MAP_IMAGE = 'images/map.png';
+const MAP_RADIUS = PLANET_RADIUS + .002;
+const MAP_DOT_RADIUS = .004;
+const MAP_DOT_COLOR = 0x5b7fd1;
+const CITY_COLOR = 0xc4e2ff;
+const MAP_LON_OFFSET = 98;
+
+const planetLon = lon => lon + MAP_LON_OFFSET;
+
+const latLon = (lat, lon, radius = PIN_RADIUS) => new THREE.Vector3().setFromSphericalCoords(
+  radius,
   THREE.MathUtils.degToRad(90 - lat),
-  THREE.MathUtils.degToRad(lon)
+  THREE.MathUtils.degToRad(planetLon(lon))
 ).toArray();
 
 const LOCATIONS = [
   {
-    lat: 30,
-    lon: 113,
+    lat: 51.5,
+    lon: -0.1,
     main: true,
     labels: [
       { text: 'UK', size: .03 },
-      { text: 'London', color: 0x84B3DF, size: .02 }
+      { text: 'London', color: CITY_COLOR, size: .02 }
     ]
   },
   {
-    lat: 0,
-    lon: 90,
+    lat: 30,
+    lon: 31.2,
     labels: [
       { text: 'Egypt', size: .03 },
-      { text: 'Cairo', color: 0x84B3DF, size: .02 }
+      { text: 'Cairo', color: CITY_COLOR, size: .02 }
+    ]
+  },
+  {
+    lat: 48.9,
+    lon: 2.4,
+    labels: [
+      { text: 'France', size: .03 },
+      { text: 'Paris', color: CITY_COLOR, size: .02 }
+    ]
+  },
+  {
+    lat: 40.7,
+    lon: -74,
+    main: true,
+    labels: [
+      { text: 'USA', size: .03 },
+      { text: 'New York', color: CITY_COLOR, size: .02 }
+    ]
+  },
+  {
+    lat: 50.5,
+    lon: 30.5,
+    main: true,
+    labels: [
+      { text: 'Ukraine', size: .03 },
+      { text: 'Kyiv', color: CITY_COLOR, size: .02 }
+    ]
+  },
+  {
+    lat: 35.7,
+    lon: 139.7,
+    labels: [
+      { text: 'Japan', size: .03 },
+      { text: 'Tokyo', color: CITY_COLOR, size: .02 }
+    ]
+  },
+  {
+    lat: 39.9,
+    lon: 116.4,
+    labels: [
+      { text: 'China', size: .03 },
+      { text: 'Beijing', color: CITY_COLOR, size: .02 }
+    ]
+  },
+  {
+    lat: 34.1,
+    lon: -118.2,
+    labels: [
+      { text: 'USA', size: .03 },
+      { text: 'Los Angeles', color: CITY_COLOR, size: .02 }
     ]
   }
 ];
+
+const loadImage = src => new Promise((resolve, reject) => {
+  const image = new Image();
+  image.onload = () => resolve(image);
+  image.onerror = reject;
+  image.src = src;
+});
+
+const getLandPoints = image => {
+  const canvas = document.createElement('canvas');
+  canvas.width = image.width;
+  canvas.height = image.height;
+
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(image, 0, 0);
+  const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+  const points = [];
+  for (let y = 0; y < canvas.height; y++) {
+    for (let x = 0; x < canvas.width; x++) {
+      const alpha = data[(y * canvas.width + x) * 4 + 3];
+      if (alpha > 200) {
+        const lat = 90 - (y + .5) / canvas.height * 180;
+        const lon = (x + .5) / canvas.width * 360 - 180;
+        points.push([lat, lon]);
+      }
+    }
+  }
+  return points;
+};
+
+const createMapDots = landPoints => {
+  const placer = new THREE.Object3D();
+
+  const dots = landPoints.map(([lat, lon]) => {
+    placer.position.set(...latLon(lat, lon, MAP_RADIUS));
+    placer.lookAt(placer.position.clone().multiplyScalar(2));
+    placer.updateMatrix();
+    return new THREE.CircleGeometry(MAP_DOT_RADIUS, 6).applyMatrix4(placer.matrix);
+  });
+
+  const geometry = THREE.BufferGeometryUtils.mergeBufferGeometries(dots);
+  return new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ color: MAP_DOT_COLOR }));
+};
 
 const settings = {
   animate: true,
@@ -92,6 +196,10 @@ const sketch = ({ context }) => {
 
   scene.add(planetContents, planetBody, lightHolder);
 
+  loadImage(MAP_IMAGE)
+    .then(image => planetContents.add(createMapDots(getLandPoints(image))))
+    .catch(error => console.error('Не удалось загрузить карту', error));
+
   const addLocationPin = (surfacePosition, { main = false, showDot = true } = {}) => {
     const style = main ? PIN_STYLES.main : PIN_STYLES.secondary;
 
@@ -127,7 +235,7 @@ const sketch = ({ context }) => {
   const CAMERA_LON = Math.atan2(camera.position.x, camera.position.z);
 
   const facingRotation = lon => new THREE.Quaternion()
-    .setFromAxisAngle(Y_AXIS, THREE.MathUtils.degToRad(lon) - CAMERA_LON)
+    .setFromAxisAngle(Y_AXIS, THREE.MathUtils.degToRad(planetLon(lon)) - CAMERA_LON)
     .multiply(LABEL_ROTATION);
 
   const fontLoader = new THREE.FontLoader();
@@ -201,8 +309,8 @@ const sketch = ({ context }) => {
         treeIconGeometry,
         treeIconMaterial
       );
-      treeIcon.position.set(...latLon(30, 150));
-      treeIcon.quaternion.copy(facingRotation(150));
+      treeIcon.position.set(...latLon(30, 52));
+      treeIcon.quaternion.copy(facingRotation(52));
       treeIcon.scale.setScalar(0);
 
       planetContents.add(treeIcon);

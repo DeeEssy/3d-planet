@@ -4,6 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "start": "canvas-sketch sketches/2026.09.30-23.16.53.js --open",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
