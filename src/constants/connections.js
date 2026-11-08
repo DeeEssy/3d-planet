@@ -5,5 +5,5 @@ export const CONNECTIONS = [
   { from: 'london', to: 'new-york', style: 'outgoing' },
   { from: 'london', to: 'los-angeles', style: 'outgoing' },
   { from: 'london', to: 'beijing', style: 'outgoing' },
-  { from: 'london', to: 'tokyo', style: 'outgoing' }
+  { from: 'london', to: 'tokyo', style: 'outgoing' },
 ];

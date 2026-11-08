@@ -21,7 +21,7 @@ const planetLon = lon => lon + MAP_LON_OFFSET;
 const latLon = (lat, lon, radius = PIN_RADIUS) => new THREE.Vector3().setFromSphericalCoords(
   radius,
   THREE.MathUtils.degToRad(90 - lat),
-  THREE.MathUtils.degToRad(planetLon(lon))
+  THREE.MathUtils.degToRad(planetLon(lon)),
 ).toArray();
 
 const WAVES = LOCATIONS.map(({ lat, lon }) => {
@@ -29,7 +29,7 @@ const WAVES = LOCATIONS.map(({ lat, lon }) => {
   return {
     center: new THREE.Vector3(...latLon(lat, lon, MAP_RADIUS)),
     duration,
-    delay: Math.random() * duration
+    delay: Math.random() * duration,
   };
 });
 
@@ -38,7 +38,7 @@ const waveUniforms = {
   waveProgress: { value: WAVES.map(() => 0) },
   waveHeight: { value: WAVE_HEIGHT },
   waveRingWidth: { value: WAVE_RING_WIDTH },
-  waveMaxRadius: { value: WAVE_MAX_RADIUS }
+  waveMaxRadius: { value: WAVE_MAX_RADIUS },
 };
 
 const loadImage = src => new Promise((resolve, reject) => {
@@ -48,7 +48,7 @@ const loadImage = src => new Promise((resolve, reject) => {
   image.src = src;
 });
 
-const getLandPoints = image => {
+const getLandPoints = (image) => {
   const canvas = document.createElement('canvas');
   canvas.width = image.width;
   canvas.height = image.height;
@@ -62,8 +62,8 @@ const getLandPoints = image => {
     for (let x = 0; x < canvas.width; x++) {
       const alpha = data[(y * canvas.width + x) * 4 + 3];
       if (alpha > 200) {
-        const lat = 90 - (y + .5) / canvas.height * 180;
-        const lon = (x + .5) / canvas.width * 360 - 180;
+        const lat = 90 - (y + 0.5) / canvas.height * 180;
+        const lon = (x + 0.5) / canvas.width * 360 - 180;
         points.push([lat, lon]);
       }
     }
@@ -71,7 +71,7 @@ const getLandPoints = image => {
   return points;
 };
 
-const createMapDots = landPoints => {
+const createMapDots = (landPoints) => {
   const placer = new THREE.Object3D();
 
   const dots = landPoints.map(([lat, lon]) => {
@@ -95,7 +95,7 @@ const createMapDots = landPoints => {
 const createMapDotsMaterial = () => {
   const material = new THREE.MeshBasicMaterial({ color: MAP_DOT_COLOR });
 
-  material.onBeforeCompile = shader => {
+  material.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, waveUniforms);
 
     shader.vertexShader = `
@@ -107,8 +107,8 @@ const createMapDotsMaterial = () => {
       uniform float waveMaxRadius;
       ${shader.vertexShader}
     `.replace(
-      '#include <begin_vertex>',
-      `#include <begin_vertex>
+          '#include <begin_vertex>',
+          `#include <begin_vertex>
 
       float lift = 0.0;
       for (int i = 0; i < ${WAVES.length}; i++) {
@@ -119,8 +119,8 @@ const createMapDotsMaterial = () => {
       }
 
       transformed += normalize(dotCenter) * min(lift, 1.0) * waveHeight;
-      `
-    );
+      `,
+        );
   };
 
   return material;
@@ -152,7 +152,7 @@ const createArc = ({ from, to, style }) => {
     dashScale: 1 / length,
     dashSize: 1,
     gapSize: 1,
-    dashOffset: 1
+    dashOffset: 1,
   });
 
   const arc = new Line2(geometry, material);
@@ -169,32 +169,32 @@ document.body.appendChild(renderer.domElement);
 
 const camera = new THREE.PerspectiveCamera(12, 1, 0.01, 100);
 camera.position.set(10.5, 0, -3.5);
-camera.setViewOffset(10, 10, -2, .5, 9, 9);
+camera.setViewOffset(10, 10, -2, 0.5, 9, 9);
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
-controls.dampingFactor = .05;
+controls.dampingFactor = 0.05;
 
 const scene = new THREE.Scene();
 
 const planetContentsGeometry = new THREE.IcosahedronGeometry(1, 2);
 const planetContentsMaterial = new THREE.MeshBasicMaterial({
   opacity: 0,
-  transparent: true
-})
+  transparent: true,
+});
 
 const planetContents = new THREE.Mesh(
   planetContentsGeometry,
-  planetContentsMaterial
+  planetContentsMaterial,
 );
 
 const lightHolder = new THREE.Group();
 
 const aLight = new THREE.DirectionalLight(0xffffff, LIGHT_INTENSITY);
-aLight.position.set(-1.5, 1.7, .7);
+aLight.position.set(-1.5, 1.7, 0.7);
 
 const aLight2 = new THREE.DirectionalLight(0xffffff, LIGHT_INTENSITY);
-aLight2.position.set(-1.5, .3, .7);
+aLight2.position.set(-1.5, 0.3, 0.7);
 
 lightHolder.add(aLight, aLight2);
 
@@ -206,15 +206,17 @@ const planetBody = new THREE.Mesh(planetBodyGeometry, planetBodyMaterial);
 scene.add(planetContents, planetBody, lightHolder);
 
 const arcs = CONNECTIONS.map(connection => ({ ...connection, line: createArc(connection), startTime: null }));
-arcs.forEach(arc => { arc.line.visible = false; });
+arcs.forEach((arc) => {
+  arc.line.visible = false;
+});
 planetContents.add(...arcs.map(arc => arc.line));
 
 const readyLocationIds = new Set();
 
-const onLocationReady = id => {
+const onLocationReady = (id) => {
   readyLocationIds.add(id);
 
-  arcs.forEach(arc => {
+  arcs.forEach((arc) => {
     if (arc.startTime === null && readyLocationIds.has(arc.from) && readyLocationIds.has(arc.to)) {
       arc.startTime = performance.now() / 1000;
       arc.line.visible = true;
@@ -266,13 +268,15 @@ const facingRotation = lon => new THREE.Quaternion()
 
 let font = null;
 
-new FontLoader().load('fonts/font-roboto.json', loadedFont => { font = loadedFont; });
+new FontLoader().load('fonts/font-roboto.json', (loadedFont) => {
+  font = loadedFont;
+});
 
 const addText = (text, { size, y, color = 0xffffff }) => {
   const textGeometry = new TextGeometry(text, {
     font,
     size,
-    depth: .001,
+    depth: 0.001,
     curveSegments: 4,
   });
 
@@ -281,7 +285,7 @@ const addText = (text, { size, y, color = 0xffffff }) => {
   });
 
   const textMesh = new THREE.Mesh(textGeometry, textMaterial);
-  textMesh.position.set(.02, y, 0);
+  textMesh.position.set(0.02, y, 0);
 
   return textMesh;
 };
@@ -295,7 +299,7 @@ const showLocation = ({ lat, lon, main, labels }) => {
   planetContents.add(labelGroup);
 
   let lineY = 0;
-  const labelMeshes = labels.map(({ text, color, size = .05 }) => {
+  const labelMeshes = labels.map(({ text, color, size = 0.05 }) => {
     lineY -= size * 1.8;
     return addText(text, { size, y: lineY, color });
   });
@@ -319,7 +323,7 @@ const showLocation = ({ lat, lon, main, labels }) => {
 
 const hiddenLocations = LOCATIONS.map(location => ({
   location,
-  point: new THREE.Vector3(...latLon(location.lat, location.lon))
+  point: new THREE.Vector3(...latLon(location.lat, location.lon)),
 }));
 
 const locationDirection = new THREE.Vector3();
@@ -348,18 +352,18 @@ loader.load(
   function (texture) {
     texture.colorSpace = THREE.SRGBColorSpace;
 
-    const treeIconGeometry = new THREE.PlaneGeometry(.160, .160);
-    treeIconGeometry.translate(0, .160 / 2, 0);
+    const treeIconGeometry = new THREE.PlaneGeometry(0.160, 0.160);
+    treeIconGeometry.translate(0, 0.160 / 2, 0);
 
-    const treeIconMaterial = new THREE.MeshBasicMaterial( {
-        map: texture,
-        side: THREE.DoubleSide,
-        alphaTest:.5
+    const treeIconMaterial = new THREE.MeshBasicMaterial({
+      map: texture,
+      side: THREE.DoubleSide,
+      alphaTest: 0.5,
     });
 
     const treeIcon = new THREE.Mesh(
       treeIconGeometry,
-      treeIconMaterial
+      treeIconMaterial,
     );
     treeIcon.position.set(...latLon(30, 52));
     treeIcon.quaternion.copy(facingRotation(52));
@@ -367,12 +371,12 @@ loader.load(
 
     planetContents.add(treeIcon);
 
-    anime({ targets: treeIcon.scale, x: [0, .7], y: [0, .7], z: [0, 1], duration: 600, easing: 'linear' })
+    anime({ targets: treeIcon.scale, x: [0, 0.7], y: [0, 0.7], z: [0, 1], duration: 600, easing: 'linear' });
   },
   undefined,
-  function ( e ) {
-      console.error( e );
-  }
+  function (e) {
+    console.error(e);
+  },
 );
 
 const resize = () => {
@@ -384,14 +388,14 @@ const resize = () => {
 window.addEventListener('resize', resize);
 resize();
 
-renderer.setAnimationLoop(timeMs => {
+renderer.setAnimationLoop((timeMs) => {
   const time = timeMs / 1000;
 
   planetContents.rotation.y = time * THREE.MathUtils.degToRad(-3);
 
   showLocationsFacingCamera();
 
-  arcs.forEach(arc => {
+  arcs.forEach((arc) => {
     if (arc.startTime !== null) {
       arc.line.material.dashOffset = getArcDashOffset(Math.max(0, time - arc.startTime));
     }
