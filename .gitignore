@@ -3,3 +3,4 @@ api/web/public/uploads
 node_modules
 *.lock
 .idea
+dist
