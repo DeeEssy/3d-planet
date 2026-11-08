@@ -13,7 +13,7 @@ import { PIN_RADIUS, PIN_STYLES } from './constants/pins.js';
 import { ARC_STYLES, ARC_HEIGHT, ARC_SEGMENTS, ARC_FLIGHT_DURATION } from './constants/arcs.js';
 import { WAVE_HEIGHT, WAVE_RING_WIDTH, WAVE_MAX_RADIUS, WAVE_DURATION } from './constants/waves.js';
 import { MAP_IMAGE, MAP_RADIUS, MAP_DOT_RADIUS, MAP_DOT_COLOR, MAP_LON_OFFSET } from './constants/map.js';
-import { LOCATIONS } from './constants/locations.js';
+import { LOCATIONS, LOCATION_APPEAR_FACING } from './constants/locations.js';
 import { CONNECTIONS } from './constants/connections.js';
 
 const planetLon = lon => lon + MAP_LON_OFFSET;
@@ -164,7 +164,7 @@ const getArcDashOffset = time => 1 - 2 * ((time / ARC_FLIGHT_DURATION) % 1);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.setClearColor('#333', 1);
+renderer.setClearColor('#000', 1);
 document.body.appendChild(renderer.domElement);
 
 const camera = new THREE.PerspectiveCamera(12, 1, 0.01, 100);
@@ -172,6 +172,8 @@ camera.position.set(10.5, 0, -3.5);
 camera.setViewOffset(10, 10, -2, .5, 9, 9);
 
 const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = .05;
 
 const scene = new THREE.Scene();
 
@@ -203,15 +205,21 @@ const planetBody = new THREE.Mesh(planetBodyGeometry, planetBodyMaterial);
 
 scene.add(planetContents, planetBody, lightHolder);
 
-const arcs = CONNECTIONS.map(createArc);
-planetContents.add(...arcs);
+const arcs = CONNECTIONS.map(connection => ({ ...connection, line: createArc(connection), startTime: null }));
+arcs.forEach(arc => { arc.line.visible = false; });
+planetContents.add(...arcs.map(arc => arc.line));
 
-let arcsStartTime = null;
-arcs.forEach(arc => { arc.visible = false; });
+const readyLocationIds = new Set();
 
-const startArcs = () => {
-  arcsStartTime = performance.now() / 1000;
-  arcs.forEach(arc => { arc.visible = true; });
+const onLocationReady = id => {
+  readyLocationIds.add(id);
+
+  arcs.forEach(arc => {
+    if (arc.startTime === null && readyLocationIds.has(arc.from) && readyLocationIds.has(arc.to)) {
+      arc.startTime = performance.now() / 1000;
+      arc.line.visible = true;
+    }
+  });
 };
 
 loadImage(MAP_IMAGE)
@@ -256,60 +264,82 @@ const facingRotation = lon => new THREE.Quaternion()
   .setFromAxisAngle(Y_AXIS, THREE.MathUtils.degToRad(planetLon(lon)) - CAMERA_LON)
   .multiply(LABEL_ROTATION);
 
-const fontLoader = new FontLoader();
+let font = null;
 
-fontLoader.load('fonts/font-roboto.json', font => {
-  function addText(text, { size, y, color = 0xffffff }) {
-    const textGeometry = new TextGeometry(text, {
-      font,
-      size,
-      depth: .001,
-      curveSegments: 4,
-    });
+new FontLoader().load('fonts/font-roboto.json', loadedFont => { font = loadedFont; });
 
-    const textMaterial = new THREE.MeshBasicMaterial({
-      color,
-    });
+const addText = (text, { size, y, color = 0xffffff }) => {
+  const textGeometry = new TextGeometry(text, {
+    font,
+    size,
+    depth: .001,
+    curveSegments: 4,
+  });
 
-    const textMesh = new THREE.Mesh(textGeometry, textMaterial);
-    textMesh.position.set(.02, y, 0);
+  const textMaterial = new THREE.MeshBasicMaterial({
+    color,
+  });
 
-    return textMesh;
+  const textMesh = new THREE.Mesh(textGeometry, textMaterial);
+  textMesh.position.set(.02, y, 0);
+
+  return textMesh;
+};
+
+const showLocation = ({ lat, lon, main, labels }) => {
+  const pin = addLocationPin(latLon(lat, lon), { main });
+
+  const labelGroup = new THREE.Group();
+  labelGroup.position.copy(pin.top);
+  labelGroup.quaternion.copy(facingRotation(lon));
+  planetContents.add(labelGroup);
+
+  let lineY = 0;
+  const labelMeshes = labels.map(({ text, color, size = .05 }) => {
+    lineY -= size * 1.8;
+    return addText(text, { size, y: lineY, color });
+  });
+  labelGroup.add(...labelMeshes);
+
+  [...labelMeshes, pin.stick, pin.dot].forEach(object => object.scale.setScalar(0));
+
+  const grow = { x: 1, y: 1, z: 1 };
+  const timeline = anime.timeline({ easing: 'linear' });
+
+  labelMeshes.forEach((label, i) => {
+    timeline.add({ targets: label.scale, ...grow, duration: 600, delay: i === 0 ? 0 : 1000 });
+  });
+
+  timeline
+    .add({ targets: pin.dot.scale, ...grow, duration: 1500 })
+    .add({ targets: pin.stick.scale, ...grow, duration: 1500, delay: 1100 }, '-=1500');
+
+  return timeline.finished;
+};
+
+const hiddenLocations = LOCATIONS.map(location => ({
+  location,
+  point: new THREE.Vector3(...latLon(location.lat, location.lon))
+}));
+
+const locationDirection = new THREE.Vector3();
+const cameraDirection = new THREE.Vector3();
+
+const showLocationsFacingCamera = () => {
+  if (!font) return;
+
+  cameraDirection.copy(camera.position).normalize();
+
+  for (let i = hiddenLocations.length - 1; i >= 0; i--) {
+    const { location, point } = hiddenLocations[i];
+    locationDirection.copy(point).applyMatrix4(planetContents.matrixWorld).normalize();
+
+    if (locationDirection.dot(cameraDirection) > LOCATION_APPEAR_FACING) {
+      hiddenLocations.splice(i, 1);
+      showLocation(location).then(() => onLocationReady(location.id));
+    }
   }
-
-  function showLocation({ lat, lon, main, labels }) {
-    const pin = addLocationPin(latLon(lat, lon), { main });
-
-    const labelGroup = new THREE.Group();
-    labelGroup.position.copy(pin.top);
-    labelGroup.quaternion.copy(facingRotation(lon));
-    planetContents.add(labelGroup);
-
-    let lineY = 0;
-    const labelMeshes = labels.map(({ text, color, size = .05 }) => {
-      lineY -= size * 1.8;
-      return addText(text, { size, y: lineY, color });
-    });
-    labelGroup.add(...labelMeshes);
-
-    [...labelMeshes, pin.stick, pin.dot].forEach(object => object.scale.setScalar(0));
-
-    const grow = { x: 1, y: 1, z: 1 };
-    const timeline = anime.timeline({ easing: 'linear' });
-
-    labelMeshes.forEach((label, i) => {
-      timeline.add({ targets: label.scale, ...grow, duration: 600, delay: i === 0 ? 0 : 1000 });
-    });
-
-    timeline
-      .add({ targets: pin.dot.scale, ...grow, duration: 1500 })
-      .add({ targets: pin.stick.scale, ...grow, duration: 1500, delay: 1100 }, '-=1500');
-
-    return timeline.finished;
-  }
-
-  Promise.all(LOCATIONS.map(showLocation)).then(startArcs);
-})
+};
 
 const loader = new THREE.TextureLoader();
 
@@ -359,14 +389,19 @@ renderer.setAnimationLoop(timeMs => {
 
   planetContents.rotation.y = time * THREE.MathUtils.degToRad(-3);
 
-  if (arcsStartTime !== null) {
-    const dashOffset = getArcDashOffset(Math.max(0, time - arcsStartTime));
-    arcs.forEach(arc => { arc.material.dashOffset = dashOffset; });
-  }
+  showLocationsFacingCamera();
+
+  arcs.forEach(arc => {
+    if (arc.startTime !== null) {
+      arc.line.material.dashOffset = getArcDashOffset(Math.max(0, time - arc.startTime));
+    }
+  });
 
   WAVES.forEach((wave, i) => {
     waveUniforms.waveProgress.value[i] = ((time + wave.delay) / wave.duration) % 1;
   });
+
+  controls.update();
 
   lightHolder.quaternion.copy(camera.quaternion);
   renderer.render(scene, camera);

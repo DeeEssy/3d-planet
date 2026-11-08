@@ -1,4 +1,5 @@
 export const CITY_COLOR = 0xc4e2ff;
+export const LOCATION_APPEAR_FACING = .3;
 
 export const LOCATIONS = [
   {
