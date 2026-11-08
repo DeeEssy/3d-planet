@@ -206,6 +206,14 @@ scene.add(planetContents, planetBody, lightHolder);
 const arcs = CONNECTIONS.map(createArc);
 planetContents.add(...arcs);
 
+let arcsStartTime = null;
+arcs.forEach(arc => { arc.visible = false; });
+
+const startArcs = () => {
+  arcsStartTime = performance.now() / 1000;
+  arcs.forEach(arc => { arc.visible = true; });
+};
+
 loadImage(MAP_IMAGE)
   .then(image => planetContents.add(createMapDots(getLandPoints(image))))
   .catch(error => console.error('Не удалось загрузить карту', error));
@@ -296,9 +304,11 @@ fontLoader.load('fonts/font-roboto.json', font => {
     timeline
       .add({ targets: pin.dot.scale, ...grow, duration: 1500 })
       .add({ targets: pin.stick.scale, ...grow, duration: 1500, delay: 1100 }, '-=1500');
+
+    return timeline.finished;
   }
 
-  LOCATIONS.forEach(showLocation);
+  Promise.all(LOCATIONS.map(showLocation)).then(startArcs);
 })
 
 const loader = new THREE.TextureLoader();
@@ -349,7 +359,10 @@ renderer.setAnimationLoop(timeMs => {
 
   planetContents.rotation.y = time * THREE.MathUtils.degToRad(-3);
 
-  arcs.forEach(arc => { arc.material.dashOffset = getArcDashOffset(time); });
+  if (arcsStartTime !== null) {
+    const dashOffset = getArcDashOffset(Math.max(0, time - arcsStartTime));
+    arcs.forEach(arc => { arc.material.dashOffset = dashOffset; });
+  }
 
   WAVES.forEach((wave, i) => {
     waveUniforms.waveProgress.value[i] = ((time + wave.delay) / wave.duration) % 1;
