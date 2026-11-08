@@ -4,24 +4,17 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { FontLoader } from 'three/addons/loaders/FontLoader.js';
 import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { Line2 } from 'three/addons/lines/Line2.js';
+import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
+import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 
-const PLANET_RADIUS = 1.0499;
-const PLANET_COLOR = 0x0e3d89;
-const LIGHT_INTENSITY = 2 * Math.PI;
-const PIN_HEIGHT_ABOVE_PLANET = .03;
-const PIN_RADIUS = PLANET_RADIUS + PIN_HEIGHT_ABOVE_PLANET;
-
-const PIN_STYLES = {
-  main: { stickRadius: .004, stickHeight: .18, dotRadius: .017, dotSegments: 14, color: 0x86c3f9 },
-  secondary: { stickRadius: .002, stickHeight: .1, dotRadius: .01, dotSegments: 8, color: 0x008DFB }
-};
-
-const MAP_IMAGE = 'images/map.png';
-const MAP_RADIUS = PLANET_RADIUS + .002;
-const MAP_DOT_RADIUS = .004;
-const MAP_DOT_COLOR = 0x86a6e8;
-const CITY_COLOR = 0xc4e2ff;
-const MAP_LON_OFFSET = 98;
+import { PLANET_RADIUS, PLANET_COLOR, LIGHT_INTENSITY } from './constants/planet.js';
+import { PIN_RADIUS, PIN_STYLES } from './constants/pins.js';
+import { ARC_STYLES, ARC_HEIGHT, ARC_SEGMENTS, ARC_FLIGHT_DURATION } from './constants/arcs.js';
+import { WAVE_HEIGHT, WAVE_RING_WIDTH, WAVE_MAX_RADIUS, WAVE_DURATION } from './constants/waves.js';
+import { MAP_IMAGE, MAP_RADIUS, MAP_DOT_RADIUS, MAP_DOT_COLOR, MAP_LON_OFFSET } from './constants/map.js';
+import { LOCATIONS } from './constants/locations.js';
+import { CONNECTIONS } from './constants/connections.js';
 
 const planetLon = lon => lon + MAP_LON_OFFSET;
 
@@ -31,75 +24,22 @@ const latLon = (lat, lon, radius = PIN_RADIUS) => new THREE.Vector3().setFromSph
   THREE.MathUtils.degToRad(planetLon(lon))
 ).toArray();
 
-const LOCATIONS = [
-  {
-    lat: 51.5,
-    lon: -0.1,
-    main: true,
-    labels: [
-      { text: 'UK', size: .03 },
-      { text: 'London', color: CITY_COLOR, size: .02 }
-    ]
-  },
-  {
-    lat: 30,
-    lon: 31.2,
-    labels: [
-      { text: 'Egypt', size: .03 },
-      { text: 'Cairo', color: CITY_COLOR, size: .02 }
-    ]
-  },
-  {
-    lat: 48.9,
-    lon: 2.4,
-    labels: [
-      { text: 'France', size: .03 },
-      { text: 'Paris', color: CITY_COLOR, size: .02 }
-    ]
-  },
-  {
-    lat: 40.7,
-    lon: -74,
-    main: true,
-    labels: [
-      { text: 'USA', size: .03 },
-      { text: 'New York', color: CITY_COLOR, size: .02 }
-    ]
-  },
-  {
-    lat: 50.5,
-    lon: 30.5,
-    main: true,
-    labels: [
-      { text: 'Ukraine', size: .03 },
-      { text: 'Kyiv', color: CITY_COLOR, size: .02 }
-    ]
-  },
-  {
-    lat: 35.7,
-    lon: 139.7,
-    labels: [
-      { text: 'Japan', size: .03 },
-      { text: 'Tokyo', color: CITY_COLOR, size: .02 }
-    ]
-  },
-  {
-    lat: 39.9,
-    lon: 116.4,
-    labels: [
-      { text: 'China', size: .03 },
-      { text: 'Beijing', color: CITY_COLOR, size: .02 }
-    ]
-  },
-  {
-    lat: 34.1,
-    lon: -118.2,
-    labels: [
-      { text: 'USA', size: .03 },
-      { text: 'Los Angeles', color: CITY_COLOR, size: .02 }
-    ]
-  }
-];
+const WAVES = LOCATIONS.map(({ lat, lon }) => {
+  const duration = THREE.MathUtils.randFloat(...WAVE_DURATION);
+  return {
+    center: new THREE.Vector3(...latLon(lat, lon, MAP_RADIUS)),
+    duration,
+    delay: Math.random() * duration
+  };
+});
+
+const waveUniforms = {
+  waveCenters: { value: WAVES.map(wave => wave.center) },
+  waveProgress: { value: WAVES.map(() => 0) },
+  waveHeight: { value: WAVE_HEIGHT },
+  waveRingWidth: { value: WAVE_RING_WIDTH },
+  waveMaxRadius: { value: WAVE_MAX_RADIUS }
+};
 
 const loadImage = src => new Promise((resolve, reject) => {
   const image = new Image();
@@ -138,12 +78,89 @@ const createMapDots = landPoints => {
     placer.position.set(...latLon(lat, lon, MAP_RADIUS));
     placer.lookAt(placer.position.clone().multiplyScalar(2));
     placer.updateMatrix();
-    return new THREE.CircleGeometry(MAP_DOT_RADIUS, 6).applyMatrix4(placer.matrix);
+
+    const dot = new THREE.CircleGeometry(MAP_DOT_RADIUS, 6).applyMatrix4(placer.matrix);
+
+    const vertexCount = dot.attributes.position.count;
+    const centers = Array.from({ length: vertexCount }, () => placer.position.toArray()).flat();
+    dot.setAttribute('dotCenter', new THREE.Float32BufferAttribute(centers, 3));
+
+    return dot;
   });
 
   const geometry = mergeGeometries(dots);
-  return new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ color: MAP_DOT_COLOR }));
+  return new THREE.Mesh(geometry, createMapDotsMaterial());
 };
+
+const createMapDotsMaterial = () => {
+  const material = new THREE.MeshBasicMaterial({ color: MAP_DOT_COLOR });
+
+  material.onBeforeCompile = shader => {
+    Object.assign(shader.uniforms, waveUniforms);
+
+    shader.vertexShader = `
+      attribute vec3 dotCenter;
+      uniform vec3 waveCenters[${WAVES.length}];
+      uniform float waveProgress[${WAVES.length}];
+      uniform float waveHeight;
+      uniform float waveRingWidth;
+      uniform float waveMaxRadius;
+      ${shader.vertexShader}
+    `.replace(
+      '#include <begin_vertex>',
+      `#include <begin_vertex>
+
+      float lift = 0.0;
+      for (int i = 0; i < ${WAVES.length}; i++) {
+        float ringRadius = waveProgress[i] * waveMaxRadius;
+        float distanceToRing = abs(distance(dotCenter, waveCenters[i]) - ringRadius);
+        float onRing = 1.0 - smoothstep(0.0, waveRingWidth, distanceToRing);
+        lift += onRing * (1.0 - waveProgress[i]);
+      }
+
+      transformed += normalize(dotCenter) * min(lift, 1.0) * waveHeight;
+      `
+    );
+  };
+
+  return material;
+};
+
+const findLocation = id => LOCATIONS.find(location => location.id === id);
+
+const createArcPoints = (from, to) => {
+  const start = new THREE.Vector3(...latLon(from.lat, from.lon));
+  const end = new THREE.Vector3(...latLon(to.lat, to.lon));
+
+  const height = start.distanceTo(end) * ARC_HEIGHT;
+  const middle = start.clone().add(end).normalize().multiplyScalar(PIN_RADIUS + height);
+
+  return new THREE.QuadraticBezierCurve3(start, middle, end).getPoints(ARC_SEGMENTS);
+};
+
+const createArc = ({ from, to, style }) => {
+  const { color, width } = ARC_STYLES[style];
+  const points = createArcPoints(findLocation(from), findLocation(to));
+
+  const geometry = new LineGeometry().setPositions(points.flatMap(point => point.toArray()));
+
+  const length = points.reduce((sum, point, i) => i === 0 ? 0 : sum + point.distanceTo(points[i - 1]), 0);
+  const material = new LineMaterial({
+    color,
+    linewidth: width,
+    dashed: true,
+    dashScale: 1 / length,
+    dashSize: 1,
+    gapSize: 1,
+    dashOffset: 1
+  });
+
+  const arc = new Line2(geometry, material);
+  arc.computeLineDistances();
+  return arc;
+};
+
+const getArcDashOffset = time => 1 - 2 * ((time / ARC_FLIGHT_DURATION) % 1);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -185,6 +202,9 @@ const planetBodyMaterial = new THREE.MeshStandardMaterial({ color: PLANET_COLOR 
 const planetBody = new THREE.Mesh(planetBodyGeometry, planetBodyMaterial);
 
 scene.add(planetContents, planetBody, lightHolder);
+
+const arcs = CONNECTIONS.map(createArc);
+planetContents.add(...arcs);
 
 loadImage(MAP_IMAGE)
   .then(image => planetContents.add(createMapDots(getLandPoints(image))))
@@ -328,6 +348,12 @@ renderer.setAnimationLoop(timeMs => {
   const time = timeMs / 1000;
 
   planetContents.rotation.y = time * THREE.MathUtils.degToRad(-3);
+
+  arcs.forEach(arc => { arc.material.dashOffset = getArcDashOffset(time); });
+
+  WAVES.forEach((wave, i) => {
+    waveUniforms.waveProgress.value[i] = ((time + wave.delay) / wave.duration) % 1;
+  });
 
   lightHolder.quaternion.copy(camera.quaternion);
   renderer.render(scene, camera);
